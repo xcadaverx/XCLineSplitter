@@ -13,23 +13,21 @@ enum SplitterError: Error {
     case nilCurrentLine
     case nilText
     case noParenthesisFound
+    case noParamsFound
 }
 
 class SourceEditorCommand: NSObject, XCSourceEditorCommand {
     
     func perform(with invocation: XCSourceEditorCommandInvocation, completionHandler: @escaping (Error?) -> Void ) -> Void {
         
-        // set the buffer and point
         let buffer = invocation.buffer
         let insertionPoint = buffer.selections[0] as? XCSourceTextRange
         
-        // get the current line number
         guard let currentLine = insertionPoint?.start.line else {
             completionHandler(SplitterError.nilCurrentLine)
             return
         }
         
-        // get the text of the current line
         guard let text = buffer.lines[currentLine] as? String else {
             completionHandler(SplitterError.nilText)
             return
@@ -37,13 +35,21 @@ class SourceEditorCommand: NSObject, XCSourceEditorCommand {
         
         var splittableText: String
         let preEqualText: String
+        let shouldRemoveWhitespace: Bool
         
         if let equalLocation = text.range(of: "=")?.upperBound {
             preEqualText = text.substring(to: equalLocation) + " "
             splittableText = text.substring(from: equalLocation)
+            shouldRemoveWhitespace = true
         } else {
+            shouldRemoveWhitespace = false
             preEqualText = ""
             splittableText = text
+        }
+        
+        guard let _ = splittableText.range(of: ",") else {
+            completionHandler(SplitterError.noParamsFound)
+            return
         }
         
         guard let parenthesisLocation = splittableText.indexDistance(of: "(") else {
@@ -52,18 +58,16 @@ class SourceEditorCommand: NSObject, XCSourceEditorCommand {
         }
         
         let prefixCount = preEqualText.characters.count
-        
-        // seperate params by ','
         let components = splittableText.components(separatedBy: ",")
         
         for (i, component) in components.enumerated() {
             if i == 0 {
-                invocation.buffer.lines[currentLine] = "\(preEqualText)\(component),"
+                invocation.buffer.lines[currentLine] = "\(preEqualText)\(shouldRemoveWhitespace ? component.removeLeadingWhitespace() : component),"
             } else if i == components.count - 1 {
-                let line = " " * (parenthesisLocation + prefixCount - 1) + component
+                let line = " " * (parenthesisLocation + prefixCount - (shouldRemoveWhitespace ? 2 : 1)) + component
                 invocation.buffer.lines.insert(line, at: currentLine + i)
             } else {
-                let line = " " * (parenthesisLocation + prefixCount - 1) + component + ","
+                let line = " " * (parenthesisLocation + prefixCount - (shouldRemoveWhitespace ? 2 : 1)) + component + ","
                 invocation.buffer.lines.insert(line, at: currentLine + i)
             }
         }
@@ -72,16 +76,25 @@ class SourceEditorCommand: NSObject, XCSourceEditorCommand {
 
     }
     
+    
 }
-
-
 
 extension String {
     func indexDistance(of character: Character) -> Int? {
         guard let index = characters.index(of: character) else { return nil }
         return distance(from: startIndex, to: index)
     }
+    
+    func removeLeadingWhitespace() -> String {
+        var copy = self
+        while copy.hasPrefix(" ") {
+            copy.remove(at: copy.startIndex)
+        }
+        return copy
+    }
 }
+
+
 
 func *(lhs: String, rhs: Int) -> String {
     var string: String = ""
