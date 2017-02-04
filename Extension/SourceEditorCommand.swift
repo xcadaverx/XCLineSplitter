@@ -34,40 +34,38 @@ class SourceEditorCommand: NSObject, XCSourceEditorCommand {
         }
         
         var splittableText: String
-        let preEqualText: String
-        let shouldRemoveWhitespace: Bool
+        let prefix: String
         
         if let equalLocation = text.range(of: "=")?.upperBound {
-            preEqualText = text.substring(to: equalLocation) + " "
-            splittableText = text.substring(from: equalLocation)
-            shouldRemoveWhitespace = true
+            prefix = text.substring(to: equalLocation) + " "
+            splittableText = text.substring(from: equalLocation).removeLeadingWhitespace()
         } else {
-            shouldRemoveWhitespace = false
-            preEqualText = ""
+            prefix = ""
             splittableText = text
         }
         
-        guard let _ = splittableText.range(of: ",") else {
+        guard let _ = splittableText.indexDistance(of: ",") else {
             completionHandler(SplitterError.noParamsFound)
             return
         }
         
-        guard let parenthesisLocation = splittableText.indexDistance(of: "(") else {
+        guard let firstParenthesisLocation = splittableText.indexDistance(of: "(") else {
             completionHandler(SplitterError.noParenthesisFound)
             return
         }
         
-        let prefixCount = preEqualText.characters.count
+        let prefixCount = prefix.characters.count
+        let whitespace = " " * (prefixCount + firstParenthesisLocation - 1)
         let components = splittableText.components(separatedBy: ",")
         
         for (i, component) in components.enumerated() {
             if i == 0 {
-                invocation.buffer.lines[currentLine] = "\(preEqualText)\(shouldRemoveWhitespace ? component.removeLeadingWhitespace() : component),"
+                invocation.buffer.lines[currentLine] = prefix + component + ","
             } else if i == components.count - 1 {
-                let line = " " * (parenthesisLocation + prefixCount - (shouldRemoveWhitespace ? 2 : 1)) + component
+                let line = whitespace + component
                 invocation.buffer.lines.insert(line, at: currentLine + i)
             } else {
-                let line = " " * (parenthesisLocation + prefixCount - (shouldRemoveWhitespace ? 2 : 1)) + component + ","
+                let line = whitespace + component + ","
                 invocation.buffer.lines.insert(line, at: currentLine + i)
             }
         }
@@ -93,8 +91,6 @@ extension String {
         return copy
     }
 }
-
-
 
 func *(lhs: String, rhs: Int) -> String {
     var string: String = ""
